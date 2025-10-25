@@ -55,6 +55,10 @@
     <!-- Camera Permission -->
     <uses-permission android:name="android.permission.CAMERA"
         tools:ignore="PermissionImpliesUnsupportedChromeOsHardware" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" 
+    android:maxSdkVersion="32" />
 
     <application
         android:label="split_pay_alpha"

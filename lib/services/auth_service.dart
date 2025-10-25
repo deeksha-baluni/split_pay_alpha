@@ -272,6 +272,48 @@ class AuthService {
     }
   }
 
+  /// Get detailed user information including balances
+  static Future<Map<String, dynamic>?> getUserDetails() async {
+    final token = await getToken();
+    if (token == null) {
+      print('❌ No auth token found');
+      return null;
+    }
+
+    final uri = Uri.parse('$_base/getUserDetails');
+    final headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+
+    try {
+      print('🔍 Fetching user details from: $uri');
+      final res = await http.get(uri, headers: headers)
+          .timeout(const Duration(seconds: 10));
+
+      print('📡 getUserDetails status: ${res.statusCode}');
+      print('📡 getUserDetails body: ${res.body}');
+
+      if (res.statusCode == 200) {
+        final Map<String, dynamic> parsed = jsonDecode(res.body);
+        
+        // Backend returns: { success: true, user: {...}, message: "..." }
+        if (parsed['success'] == true && parsed['user'] != null) {
+          return parsed;
+        }
+        
+        // Fallback if structure is different
+        return parsed;
+      } else {
+        print('❌ Failed to fetch user details: ${res.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('❌ Error fetching user details: $e');
+      return null;
+    }
+  }
+
   static Future<void> logout() async {
     _cachedUser = null;
 

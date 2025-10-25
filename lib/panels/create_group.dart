@@ -100,20 +100,61 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
     final uri = Uri.parse('$base/group/create');
 
     final token = await AuthService.getToken();
+    
+    // ✅ FIX: Get the current user's ID to add them as a member
+    final currentUser = await AuthService.getProfile();
+    if (currentUser == null) {
+      throw Exception('Could not get current user profile');
+    }
+
+    // Get user ID from backend
+    String? currentUserId;
+    try {
+      final userDetailsUri = Uri.parse('$base/getUserDetails');
+      final userRes = await http.get(
+        userDetailsUri,
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (userRes.statusCode == 200) {
+        final userParsed = jsonDecode(userRes.body);
+        // Backend returns: { success: true, user: { _id: "...", ... } }
+        if (userParsed['success'] == true && userParsed['user'] != null) {
+          currentUserId = userParsed['user']['_id']?.toString();
+        }
+      }
+    } catch (e) {
+      print('Error fetching user details: $e');
+    }
+
+    if (currentUserId == null || currentUserId.isEmpty) {
+      throw Exception('Could not get current user ID');
+    }
+
+    print('✅ Creating group with creator ID: $currentUserId');
 
     final headers = {
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
     };
 
+    // ✅ FIX: Include the creator as a member
     final body = jsonEncode({
       'name': group.name,
       'description': _groupDescriptionController.text.trim(),
-      'members': [],
+      'members': [currentUserId], // Add creator as first member
     });
+
+    print('📤 Creating group with body: $body');
 
     try {
       final res = await http.post(uri, headers: headers, body: body).timeout(const Duration(seconds: 10));
+
+      print('📡 Create group status: ${res.statusCode}');
+      print('📡 Create group response: ${res.body}');
 
       if (res.statusCode == 200 || res.statusCode == 201) {
         final Map<String, dynamic> parsed = jsonDecode(res.body);
@@ -150,6 +191,8 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
             icon: Icons.group,
             description: g['description']?.toString() ?? group.description,
           );
+          
+          print('✅ Group created successfully with ID: ${created.id}');
           return created;
         }
         return null;
@@ -180,215 +223,202 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
     return Scaffold(
       backgroundColor: backgroundColor,
       resizeToAvoidBottomInset: true,
-      // body: SafeArea(
-      //   bottom: true,
-      //   child: Column(
-      //     children: [
-      //       const Header(
-      //         title: "Create Group",
-      //         heightFactor: 0.12,
-      //       ),\
-
       body: Column(
         children: [
           const Header(
             title: "Create Group",
             heightFactor: 0.12,
           ),
-      //   ],
-      // )
+          Expanded(
+            child: AnimatedPadding(
+              duration: const Duration(milliseconds: 150),
+              curve: Curves.easeOut,
+              padding: EdgeInsets.only(bottom: keyboardBottom > 0 ? keyboardBottom : 0),
+              child: SingleChildScrollView(
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                physics: const BouncingScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(20, 16, 20, extraBottomPadding),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 8),
 
-            Expanded(
-              child: AnimatedPadding(
-                duration: const Duration(milliseconds: 150),
-                curve: Curves.easeOut,
-                padding: EdgeInsets.only(bottom: keyboardBottom > 0 ? keyboardBottom : 0),
-                child: SingleChildScrollView(
-                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                  physics: const BouncingScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(20, 16, 20, extraBottomPadding),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 8),
+                      Text(
+                        "Group Name",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: textColor,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
 
-                        Text(
-                          "Group Name",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: textColor,
+                      TextFormField(
+                        controller: _groupNameController,
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: 15,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: "Enter group name",
+                          hintStyle: TextStyle(
+                            color: textColor.withOpacity(0.5),
+                          ),
+                          filled: true,
+                          fillColor: cardColor,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? Colors.white.withOpacity(0.1)
+                                  : Colors.grey.withOpacity(0.2),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: primaryColor,
+                              width: 2,
+                            ),
+                          ),
+                          errorBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Colors.red,
+                              width: 1,
+                            ),
+                          ),
+                          focusedErrorBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Colors.red,
+                              width: 2,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Please enter a group name';
+                          }
+                          if (value.trim().length < 3) {
+                            return 'Group name must be at least 3 characters';
+                          }
+                          return null;
+                        },
+                        textInputAction: TextInputAction.next,
+                      ),
 
-                        TextFormField(
-                          controller: _groupNameController,
-                          style: TextStyle(
-                            color: textColor,
-                            fontSize: 15,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: "Enter group name",
-                            hintStyle: TextStyle(
-                              color: textColor.withOpacity(0.5),
-                            ),
-                            filled: true,
-                            fillColor: cardColor,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: isDark
-                                    ? Colors.white.withOpacity(0.1)
-                                    : Colors.grey.withOpacity(0.2),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: primaryColor,
-                                width: 2,
-                              ),
-                            ),
-                            errorBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: Colors.red,
-                                width: 1,
-                              ),
-                            ),
-                            focusedErrorBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: Colors.red,
-                                width: 2,
-                              ),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Please enter a group name';
-                            }
-                            if (value.trim().length < 3) {
-                              return 'Group name must be at least 3 characters';
-                            }
-                            return null;
-                          },
-                          textInputAction: TextInputAction.next,
+                      const SizedBox(height: 24),
+
+                      Text(
+                        "Description",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: textColor,
                         ),
+                      ),
+                      const SizedBox(height: 10),
 
-                        const SizedBox(height: 24),
-
-                        Text(
-                          "Description",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: textColor,
+                      TextFormField(
+                        controller: _groupDescriptionController,
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: 15,
+                        ),
+                        maxLines: 4,
+                        decoration: InputDecoration(
+                          hintText: "Enter group description (optional)",
+                          hintStyle: TextStyle(
+                            color: textColor.withOpacity(0.5),
+                          ),
+                          filled: true,
+                          fillColor: cardColor,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? Colors.white.withOpacity(0.1)
+                                  : Colors.grey.withOpacity(0.2),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: primaryColor,
+                              width: 2,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        textInputAction: TextInputAction.done,
+                      ),
 
-                        TextFormField(
-                          controller: _groupDescriptionController,
-                          style: TextStyle(
-                            color: textColor,
-                            fontSize: 15,
-                          ),
-                          maxLines: 4,
-                          decoration: InputDecoration(
-                            hintText: "Enter group description (optional)",
-                            hintStyle: TextStyle(
-                              color: textColor.withOpacity(0.5),
-                            ),
-                            filled: true,
-                            fillColor: cardColor,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: isDark
-                                    ? Colors.white.withOpacity(0.1)
-                                    : Colors.grey.withOpacity(0.2),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: primaryColor,
-                                width: 2,
-                              ),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
+                      const SizedBox(height: 40),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: _isCreating ? null : _handleCreateGroup,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryColor,
+                            disabledBackgroundColor: primaryColor.withOpacity(0.6),
+                            foregroundColor: Colors.white,
+                            disabledForegroundColor: Colors.white70,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
                           ),
-                          textInputAction: TextInputAction.done,
-                        ),
-
-                        const SizedBox(height: 40),
-
-                        SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: ElevatedButton(
-                            onPressed: _isCreating ? null : _handleCreateGroup,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryColor,
-                              disabledBackgroundColor: primaryColor.withOpacity(0.6),
-                              foregroundColor: Colors.white,
-                              disabledForegroundColor: Colors.white70,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
+                          child: _isCreating
+                              ? const SizedBox(
+                            height: 24,
+                            width: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
                               ),
                             ),
-                            child: _isCreating
-                                ? const SizedBox(
-                              height: 24,
-                              width: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.white,
-                                ),
-                              ),
-                            )
-                                : const Text(
-                              "Create",
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
+                          )
+                              : const Text(
+                            "Create",
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
                             ),
                           ),
                         ),
+                      ),
 
-                        const SizedBox(height: 20),
-                      ],
-                    ),
+                      const SizedBox(height: 20),
+                    ],
                   ),
                 ),
               ),
             ),
-          ],
-        ),
-      );
-
+          ),
+        ],
+      ),
+    );
   }
 }

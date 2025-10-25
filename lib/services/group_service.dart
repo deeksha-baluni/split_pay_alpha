@@ -188,35 +188,46 @@ class GroupService extends ChangeNotifier {
   }
 
   // Fetch single group details by ID
-  Future<Map<String, dynamic>?> fetchGroupDetails(String groupId) async {
-    final base = 'https://split-pay-q4wa.onrender.com/api/v1';
-    final token = await AuthService.getToken();
-    final headers = {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    };
+ Future<Map<String, dynamic>?> fetchGroupDetails(String groupId) async {
+  final base = 'https://split-pay-q4wa.onrender.com/api/v1';
+  final token = await AuthService.getToken();
+  final headers = {
+    'Content-Type': 'application/json',
+    if (token != null) 'Authorization': 'Bearer $token',
+  };
 
-    try {
-      final uri = Uri.parse('$base/group/get/$groupId');
-      final res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 10));
+  try {
+    final uri = Uri.parse('$base/group/get/$groupId');
+    print('🔍 Fetching group from: $uri');
+    
+    final res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 10));
+    
+    print('📡 Status: ${res.statusCode}');
+    print('📡 Response body: ${res.body}');
+    
+    if (res.statusCode == 200) {
+      final parsed = jsonDecode(res.body);
       
-      if (res.statusCode == 200) {
-        final parsed = jsonDecode(res.body);
-        
-        // Handle different response structures
-        if (parsed is Map<String, dynamic>) {
-          // Return the group data directly or from nested structure
-          if (parsed['group'] is Map<String, dynamic>) {
-            return parsed['group'] as Map<String, dynamic>;
-          } else if (parsed['data'] is Map<String, dynamic>) {
-            return parsed['data'] as Map<String, dynamic>;
-          }
-          return parsed;
-        }
+      // Print the EXACT structure
+      print('📦 Parsed structure:');
+      print('   Keys: ${parsed.keys}');
+      if (parsed['group'] != null) {
+        print('   group.members type: ${parsed['group']['members'].runtimeType}');
+        print('   group.members: ${parsed['group']['members']}');
       }
-    } catch (e) {
-      print('Error fetching group details: $e');
+      
+      if (parsed is Map<String, dynamic>) {
+        if (parsed['group'] is Map<String, dynamic>) {
+          return parsed['group'] as Map<String, dynamic>;
+        } else if (parsed['data'] is Map<String, dynamic>) {
+          return parsed['data'] as Map<String, dynamic>;
+        }
+        return parsed;
+      }
     }
-    return null;
+  } catch (e) {
+    print('❌ Error: $e');
   }
+  return null;
+}
 }
