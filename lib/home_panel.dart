@@ -237,7 +237,6 @@ class _HomePanelState extends State<HomePanel> {
     svc.selectedIndex = 2;
   }
 
-  // NEW: Show group selection dialog and navigate to Add Bill page
   void _showAddBillDialog() async {
     final groupService = Provider.of<GroupService>(context, listen: false);
     final groups = groupService.groups;
@@ -253,7 +252,6 @@ class _HomePanelState extends State<HomePanel> {
       return;
     }
 
-    // Show dialog to select group
     showDialog(
       context: context,
       builder: (dialogCtx) {
@@ -290,14 +288,11 @@ class _HomePanelState extends State<HomePanel> {
                   subtitle: Text('${group.members} member${group.members != 1 ? 's' : ''}'),
                   trailing: Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () async {
-                    // Save context references before async operations
                     final navigator = Navigator.of(context);
                     final scaffoldMessenger = ScaffoldMessenger.of(context);
                     
-                    // Close selection dialog
                     navigator.pop();
 
-                    // Show loading dialog
                     showDialog(
                       context: context,
                       barrierDismissible: false,
@@ -324,7 +319,6 @@ class _HomePanelState extends State<HomePanel> {
                     );
 
                     try {
-                      // Fetch group details to get members with timeout
                       final groupData = await groupService.fetchGroupDetails(group.id!)
                           .timeout(
                             Duration(seconds: 15),
@@ -339,7 +333,6 @@ class _HomePanelState extends State<HomePanel> {
 
                       print('📦 Group data received: ${groupData.keys}');
 
-                      // Extract members
                       List<Map<String, String>> members = [];
                       final membersList = groupData['members'];
                       
@@ -379,12 +372,10 @@ class _HomePanelState extends State<HomePanel> {
                         throw Exception('No valid members found in group. Please ensure the group has members.');
                       }
 
-                      // Close loading dialog using saved navigator
                       if (mounted && navigator.canPop()) {
                         navigator.pop();
                       }
 
-                      // Navigate to Add Bill page using saved navigator
                       if (mounted) {
                         navigator.push(
                           MaterialPageRoute(
@@ -398,7 +389,6 @@ class _HomePanelState extends State<HomePanel> {
                     } catch (e) {
                       print('❌ Error in _showAddBillDialog: $e');
                       
-                      // Close loading dialog using saved navigator
                       if (mounted && navigator.canPop()) {
                         try {
                           navigator.pop();
@@ -464,7 +454,6 @@ class _HomePanelState extends State<HomePanel> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Pending Invitations Section
                   if (_pendingInvites.isNotEmpty) ...[
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -516,7 +505,6 @@ class _HomePanelState extends State<HomePanel> {
                     SizedBox(height: 20),
                   ],
 
-                  // Notifications Section
                   if (_notifications.isNotEmpty) ...[
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -568,7 +556,6 @@ class _HomePanelState extends State<HomePanel> {
                     SizedBox(height: 20),
                   ],
 
-                  // Empty state when no invites or notifications
                   if (_pendingInvites.isEmpty && _notifications.isEmpty)
                     Center(
                       child: Padding(
@@ -917,7 +904,6 @@ class _HomePanelState extends State<HomePanel> {
                           ),
                           SizedBox(height: (headerHeight * 0.04).clamp(8.0, 14.0)),
                           
-                          // NEW: Two buttons side by side
                           Row(
                             children: [
                               Expanded(
@@ -980,14 +966,6 @@ class _HomePanelState extends State<HomePanel> {
     );
   }
 
-  final List<BottomNavigationBarItem> _navItems = [
-    BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
-    BottomNavigationBarItem(icon: Icon(Icons.group_outlined), label: 'Groups'),
-    BottomNavigationBarItem(icon: Icon(Icons.add_circle_outline), label: ''),
-    BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet_outlined), label: 'Balances'),
-    BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
-  ];
-
   List<Widget> _tabs(BuildContext context) => [
     _buildHome(context),
     GroupsPanel(),
@@ -997,6 +975,56 @@ class _HomePanelState extends State<HomePanel> {
       onLogout: widget.onLogout,
     ),
   ];
+
+  // NEW: Calculate floating button position
+  double _getFloatingButtonPosition(int index, BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final navBarWidth = screenWidth - 32; // minus horizontal margins (16 each side)
+    final contentWidth = navBarWidth - 40; // minus internal padding (20 each side)
+    final itemWidth = contentWidth / 5; // divide equally by 5 items
+    
+    // Calculate exact center position for the bubble
+    final bubbleWidth = 70.0;
+    final startPosition = 20.0; // left padding
+    final itemCenter = startPosition + (itemWidth * index) + (itemWidth / 2);
+    
+    return itemCenter - (bubbleWidth / 2); // center the bubble on the icon
+  }
+
+  // NEW: Floating nav item widget
+  Widget _buildFloatingNavItem({
+    required IconData icon,
+    required int index,
+    required int currentIndex,
+    required Color colorPrimary,
+    required bool isDark,
+    required VoidCallback onTap,
+  }) {
+    final isSelected = currentIndex == index;
+    
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          height: 70,
+          alignment: Alignment.center,
+          child: AnimatedScale(
+            scale: isSelected ? 1.0 : 0.95,
+            duration: Duration(milliseconds: 400),
+            curve: Curves.fastOutSlowIn,
+            child: Icon(
+              icon,
+              color: isSelected 
+                  ? Colors.white 
+                  : (isDark ? Colors.white38 : Colors.grey.shade400),
+              size: 28,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1038,165 +1066,114 @@ class _HomePanelState extends State<HomePanel> {
         bottomNavigationBar: Consumer<GroupService>(
           builder: (context, svc, _) {
             return Container(
-              margin: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              margin: EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+              height: 75,
               decoration: BoxDecoration(
                 color: isDark ? Color(0xFF1E1E2E) : Colors.white,
-                borderRadius: BorderRadius.circular(30),
+                borderRadius: BorderRadius.circular(40),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(isDark ? 0.4 : 0.15),
-                    blurRadius: 25,
+                    color: Colors.black.withOpacity(isDark ? 0.4 : 0.1),
+                    blurRadius: 30,
                     offset: Offset(0, 10),
                     spreadRadius: 0,
                   ),
                 ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(30),
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _buildNavItem(
-                          icon: Icons.home_rounded,
-                          label: 'Home',
-                          index: 0,
-                          currentIndex: svc.selectedIndex,
-                          colorPrimary: colorPrimary,
-                          isDark: isDark,
-                          onTap: () {
-                            svc.selectedIndex = 0;
-                            _loadPendingInvites();
-                            _loadNotifications();
-                          },
+                borderRadius: BorderRadius.circular(40),
+                child: Stack(
+                  children: [
+                    // Animated floating button background
+                    AnimatedPositioned(
+                      duration: Duration(milliseconds: 400),
+                      curve: Curves.fastOutSlowIn,
+                      left: _getFloatingButtonPosition(svc.selectedIndex, context),
+                      top: 2.5,
+                      child: Container(
+                        width: 70,
+                        height: 70,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              colorPrimary,
+                              colorPrimary.withOpacity(0.85),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: colorPrimary.withOpacity(0.4),
+                              blurRadius: 20,
+                              offset: Offset(0, 4),
+                              spreadRadius: 0,
+                            ),
+                          ],
                         ),
-                        _buildNavItem(
-                          icon: Icons.groups_rounded,
-                          label: 'Groups',
-                          index: 1,
-                          currentIndex: svc.selectedIndex,
-                          colorPrimary: colorPrimary,
-                          isDark: isDark,
-                          onTap: () => svc.selectedIndex = 1,
-                        ),
-                        _buildNavItem(
-                          icon: Icons.add_circle,
-                          label: '',
-                          index: 2,
-                          currentIndex: svc.selectedIndex,
-                          colorPrimary: colorPrimary,
-                          isDark: isDark,
-                          isCenter: true,
-                          onTap: () => svc.selectedIndex = 2,
-                        ),
-                        _buildNavItem(
-                          icon: Icons.account_balance_wallet_rounded,
-                          label: 'Balances',
-                          index: 3,
-                          currentIndex: svc.selectedIndex,
-                          colorPrimary: colorPrimary,
-                          isDark: isDark,
-                          onTap: () => svc.selectedIndex = 3,
-                        ),
-                        _buildNavItem(
-                          icon: Icons.person_rounded,
-                          label: 'Profile',
-                          index: 4,
-                          currentIndex: svc.selectedIndex,
-                          colorPrimary: colorPrimary,
-                          isDark: isDark,
-                          onTap: () => svc.selectedIndex = 4,
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
+                    
+                    // Navigation items
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildFloatingNavItem(
+                            icon: Icons.home_rounded,
+                            index: 0,
+                            currentIndex: svc.selectedIndex,
+                            colorPrimary: colorPrimary,
+                            isDark: isDark,
+                            onTap: () {
+                              svc.selectedIndex = 0;
+                              _loadPendingInvites();
+                              _loadNotifications();
+                            },
+                          ),
+                          _buildFloatingNavItem(
+                            icon: Icons.groups_rounded,
+                            index: 1,
+                            currentIndex: svc.selectedIndex,
+                            colorPrimary: colorPrimary,
+                            isDark: isDark,
+                            onTap: () => svc.selectedIndex = 1,
+                          ),
+                          _buildFloatingNavItem(
+                            icon: Icons.add_circle_rounded,
+                            index: 2,
+                            currentIndex: svc.selectedIndex,
+                            colorPrimary: colorPrimary,
+                            isDark: isDark,
+                            onTap: () => svc.selectedIndex = 2,
+                          ),
+                          _buildFloatingNavItem(
+                            icon: Icons.account_balance_wallet_rounded,
+                            index: 3,
+                            currentIndex: svc.selectedIndex,
+                            colorPrimary: colorPrimary,
+                            isDark: isDark,
+                            onTap: () => svc.selectedIndex = 3,
+                          ),
+                          _buildFloatingNavItem(
+                            icon: Icons.person_rounded,
+                            index: 4,
+                            currentIndex: svc.selectedIndex,
+                            colorPrimary: colorPrimary,
+                            isDark: isDark,
+                            onTap: () => svc.selectedIndex = 4,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             );
           },
         ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem({
-    required IconData icon,
-    required String label,
-    required int index,
-    required int currentIndex,
-    required Color colorPrimary,
-    required bool isDark,
-    required VoidCallback onTap,
-    bool isCenter = false,
-  }) {
-    final isSelected = currentIndex == index;
-    
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-        padding: EdgeInsets.symmetric(
-          horizontal: isCenter ? 0 : (isSelected ? 16 : 12),
-          vertical: isCenter ? 0 : 8,
-        ),
-        decoration: BoxDecoration(
-          color: isSelected && !isCenter
-              ? colorPrimary.withOpacity(0.15)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(isCenter ? 50 : 16),
-        ),
-        child: isCenter
-            ? Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      colorPrimary,
-                      colorPrimary.withOpacity(0.8),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: colorPrimary.withOpacity(0.4),
-                      blurRadius: 15,
-                      offset: Offset(0, 5),
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  icon,
-                  color: Colors.white,
-                  size: 32,
-                ),
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    icon,
-                    color: isSelected ? colorPrimary : (isDark ? Colors.white54 : Colors.grey),
-                    size: 24,
-                  ),
-                  if (isSelected && label.isNotEmpty) ...[
-                    SizedBox(width: 8),
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: colorPrimary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
       ),
     );
   }

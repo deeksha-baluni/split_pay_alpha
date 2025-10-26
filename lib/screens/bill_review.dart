@@ -2,11 +2,11 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:provider/provider.dart'; // ✅ ADD THIS
+import 'package:provider/provider.dart';
 import '../components/header.dart';
 import '../services/bill_service.dart';
 import '../services/auth_service.dart';
-import '../services/group_service.dart'; // ✅ ADD THIS
+import '../services/group_service.dart';
 
 class BillReviewPage extends StatefulWidget {
   final String expenseId;
@@ -30,19 +30,17 @@ class _BillReviewPageState extends State<BillReviewPage> {
   Map<String, dynamic>? _expenseDetails;
   bool _isLoading = true;
   String? _paidBy;
-  Map<String, List<int>> _itemAssignments = {}; // itemIndex -> [memberIndices]
+  Map<String, List<int>> _itemAssignments = {};
   bool _isProcessing = false;
 
   @override
   void initState() {
     super.initState();
     _loadBillDetails();
-    // Set first member as default payer
     if (widget.members.isNotEmpty) {
       _paidBy = widget.members[0]['email'];
     }
     
-    // Debug: Print members data
     print('📋 BillReviewPage initialized with ${widget.members.length} members:');
     for (var member in widget.members) {
       print('   - ${member['name']}: ID=${member['id']}, Email=${member['email']}');
@@ -60,7 +58,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
         print('   Total: ₹${details['totalAmount']}');
         print('   Items: ${(details['items'] as List?)?.length ?? 0}');
         
-        // 🔧 FIX: Detect and correct parsing errors
         final items = details['items'] as List?;
         if (items != null) {
           print('\n🔍 Checking for parsing errors...');
@@ -76,7 +73,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
             calculatedTotal += itemTotal;
             print('   ${i + 1}. $name: $quantity × ₹$price = ₹$itemTotal');
             
-            // 🚨 DETECT: If itemTotal is way off, the parsing is wrong
             if (itemTotal > (details['totalAmount'] * 0.8)) {
               print('   ⚠️ WARNING: ${name} total (₹$itemTotal) is >80% of bill total (₹${details['totalAmount']})');
               print('   This suggests quantity and unit price might be swapped!');
@@ -93,7 +89,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
           
           if (difference > 1.0) {
             print('   ❌ Mismatch detected! Items don\'t add up to bill total.');
-            print('   This is likely a parsing error from the OCR/LLM.');
           }
         }
         
@@ -101,7 +96,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
           _expenseDetails = details;
           _isLoading = false;
           
-          // Initialize assignments - assign all items to all members by default
           if (items != null) {
             for (int i = 0; i < items.length; i++) {
               _itemAssignments[i.toString()] = 
@@ -240,7 +234,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
                   items[itemIndex]['quantity'] = newQuantity;
                   items[itemIndex]['price'] = newPrice;
 
-                  // Recalculate total
                   double newTotal = 0.0;
                   for (var item in items) {
                     newTotal += ((item['price'] ?? 0).toDouble() * (item['quantity'] ?? 1).toInt());
@@ -283,7 +276,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
       return;
     }
 
-    // Validate all members have valid IDs
     print('🔍 Validating member IDs...');
     for (var member in widget.members) {
       final memberId = member['id'];
@@ -306,7 +298,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
     setState(() => _isProcessing = true);
 
     try {
-      // 🔍 VERIFY: Fetch fresh group data to ensure member IDs are correct
       print('\n🔍 Fetching fresh group data from backend...');
       final token = await AuthService.getToken();
       if (token == null) throw Exception('Not authenticated');
@@ -327,7 +318,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
       final groupParsed = jsonDecode(groupRes.body);
       final backendGroup = groupParsed['group'];
       
-      // Extract actual member IDs from backend
       List<String> backendMemberIds = [];
       if (backendGroup['members'] is List) {
         for (var member in backendGroup['members']) {
@@ -345,7 +335,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
 
       print('👥 Backend group member IDs: $backendMemberIds');
 
-      // Verify our members are in the backend list
       for (var member in widget.members) {
         final memberId = member['id'];
         if (!backendMemberIds.contains(memberId)) {
@@ -359,9 +348,8 @@ class _BillReviewPageState extends State<BillReviewPage> {
 
       print('📊 Calculating splits for ${items.length} items...');
 
-      // Calculate how much each member owes
       Map<String, double> memberOwes = {};
-      Map<String, String> memberIdMap = {}; // email -> id mapping
+      Map<String, String> memberIdMap = {};
       
       for (var member in widget.members) {
         final email = member['email']!;
@@ -370,7 +358,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
         memberIdMap[email] = id;
       }
 
-      // Calculate split for each item
       for (int i = 0; i < items.length; i++) {
         final item = items[i];
         final itemName = item['name'] ?? 'Item ${i + 1}';
@@ -397,7 +384,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
         }
       }
 
-      // Find the payer's user ID
       final payerId = memberIdMap[_paidBy];
       
       if (payerId == null || payerId.isEmpty) {
@@ -410,7 +396,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
       print('   Email: $_paidBy');
       print('   ID: $payerId');
 
-      // Create assignments for backend
       List<Map<String, dynamic>> assignments = [];
       
       print('\n📋 CREATING ASSIGNMENTS:');
@@ -426,7 +411,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
         print('      Email: $memberEmail');
         print('      Owes: ₹${amount.toStringAsFixed(2)}');
         
-        // ✅ CRITICAL FIX: Skip if this person is the payer
         if (memberId == payerId) {
           print('      ⭐️ Skipped (this is the payer - no self-assignment)');
           continue;
@@ -454,7 +438,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
       print('   Total assigned to others: ₹${totalAssigned.toStringAsFixed(2)}');
       print('   Number of assignments: ${assignments.length}');
 
-      // Show loading dialog
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -486,7 +469,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
         ),
       );
 
-      // Step 1: Assign money
       print('\n📤 STEP 1: Calling assignMoney API...');
       final assignResult = await BillService.assignMoney(
         expenseId: widget.expenseId,
@@ -502,7 +484,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
 
       print('✅ Money assigned successfully');
 
-      // Step 2: Settle assignments
       print('\n📤 STEP 2: Calling settleAssignments API...');
       final settleResult = await BillService.settleAssignments(
         expenseId: widget.expenseId,
@@ -511,16 +492,15 @@ class _BillReviewPageState extends State<BillReviewPage> {
       print('📥 settleAssignments response:');
       print(jsonEncode(settleResult));
 
-      Navigator.of(context).pop(); // Close loading dialog
+      Navigator.of(context).pop();
 
       if (settleResult['success'] == true) {
         print('✅ Assignments settled successfully');
         
-        // ✅ NEW: Cache this expense locally in GroupService
+        // ✅ Cache this expense locally in GroupService
         try {
           final groupService = Provider.of<GroupService>(context, listen: false);
           
-          // Create expense summary with item names
           String description = 'Recent Bill';
           if (items.isNotEmpty) {
             final itemNames = items.take(2).map((item) => item['name'] ?? 'Item').join(', ');
@@ -558,7 +538,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
           print('✅ Expense cached locally in GroupService');
         } catch (e) {
           print('⚠️ Error caching expense: $e');
-          // Non-critical error, continue
         }
         
         ScaffoldMessenger.of(context).showSnackBar(
@@ -575,7 +554,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
           ),
         );
 
-        // Navigate back to home (removes all routes until first)
         Navigator.of(context).popUntil((route) => route.isFirst);
       } else {
         throw Exception(settleResult['message'] ?? 'Failed to settle assignments');
@@ -586,7 +564,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
       print('   Stack trace:');
       print(StackTrace.current);
       
-      // Close loading dialog if open
       if (Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
@@ -642,7 +619,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Bill Image Preview
                       Container(
                         width: double.infinity,
                         height: 200,
@@ -663,7 +639,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
 
                       SizedBox(height: 24),
 
-                      // Total Amount
                       Container(
                         padding: EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -695,7 +670,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
 
                       SizedBox(height: 24),
 
-                      // Paid By
                       Text(
                         'Paid By',
                         style: TextStyle(
@@ -748,7 +722,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
 
                       SizedBox(height: 24),
 
-                      // Items Section
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -771,7 +744,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
                       ),
                       SizedBox(height: 12),
 
-                      // Items List
                       ...(_expenseDetails?['items'] as List? ?? [])
                           .asMap()
                           .entries
