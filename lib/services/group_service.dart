@@ -42,9 +42,9 @@ IconData _getRandomGroupIcon() {
   return icons[random.nextInt(icons.length)];
 }
 
-
 class GroupService extends ChangeNotifier {
   final List<GroupModel> _groups = [];
+  final Map<String, List<Map<String, dynamic>>> _groupExpenses = {}; // ✅ NEW: Cache expenses per group
   int _selectedIndex = 0;
 
   int get selectedIndex => _selectedIndex;
@@ -62,9 +62,24 @@ class GroupService extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ✅ NEW: Add expense to local cache
+  void addExpenseToGroup(String groupId, Map<String, dynamic> expense) {
+    if (!_groupExpenses.containsKey(groupId)) {
+      _groupExpenses[groupId] = [];
+    }
+    _groupExpenses[groupId]!.insert(0, expense); // Add to beginning (most recent)
+    notifyListeners();
+  }
+
+  // ✅ NEW: Get cached expenses for a group
+  List<Map<String, dynamic>> getGroupExpenses(String groupId) {
+    return _groupExpenses[groupId] ?? [];
+  }
+
   // Clear all groups (call this on logout)
   void clearGroups() {
     _groups.clear();
+    _groupExpenses.clear(); // ✅ NEW: Clear cached expenses too
     _selectedIndex = 0;
     notifyListeners();
   }
@@ -178,6 +193,8 @@ class GroupService extends ChangeNotifier {
       if (res.statusCode == 200 || res.statusCode == 204) {
         // Remove from local list
         _groups.removeWhere((g) => g.id == groupId);
+        // ✅ NEW: Also remove cached expenses
+        _groupExpenses.remove(groupId);
         notifyListeners();
         return true;
       }
@@ -188,46 +205,46 @@ class GroupService extends ChangeNotifier {
   }
 
   // Fetch single group details by ID
- Future<Map<String, dynamic>?> fetchGroupDetails(String groupId) async {
-  final base = 'https://split-pay-q4wa.onrender.com/api/v1';
-  final token = await AuthService.getToken();
-  final headers = {
-    'Content-Type': 'application/json',
-    if (token != null) 'Authorization': 'Bearer $token',
-  };
+  Future<Map<String, dynamic>?> fetchGroupDetails(String groupId) async {
+    final base = 'https://split-pay-q4wa.onrender.com/api/v1';
+    final token = await AuthService.getToken();
+    final headers = {
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
 
-  try {
-    final uri = Uri.parse('$base/group/get/$groupId');
-    print('🔍 Fetching group from: $uri');
-    
-    final res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 10));
-    
-    print('📡 Status: ${res.statusCode}');
-    print('📡 Response body: ${res.body}');
-    
-    if (res.statusCode == 200) {
-      final parsed = jsonDecode(res.body);
+    try {
+      final uri = Uri.parse('$base/group/get/$groupId');
+      print('📥 Fetching group from: $uri');
       
-      // Print the EXACT structure
-      print('📦 Parsed structure:');
-      print('   Keys: ${parsed.keys}');
-      if (parsed['group'] != null) {
-        print('   group.members type: ${parsed['group']['members'].runtimeType}');
-        print('   group.members: ${parsed['group']['members']}');
-      }
+      final res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 10));
       
-      if (parsed is Map<String, dynamic>) {
-        if (parsed['group'] is Map<String, dynamic>) {
-          return parsed['group'] as Map<String, dynamic>;
-        } else if (parsed['data'] is Map<String, dynamic>) {
-          return parsed['data'] as Map<String, dynamic>;
+      print('📡 Status: ${res.statusCode}');
+      print('📡 Response body: ${res.body}');
+      
+      if (res.statusCode == 200) {
+        final parsed = jsonDecode(res.body);
+        
+        // Print the EXACT structure
+        print('📦 Parsed structure:');
+        print('   Keys: ${parsed.keys}');
+        if (parsed['group'] != null) {
+          print('   group.members type: ${parsed['group']['members'].runtimeType}');
+          print('   group.members: ${parsed['group']['members']}');
         }
-        return parsed;
+        
+        if (parsed is Map<String, dynamic>) {
+          if (parsed['group'] is Map<String, dynamic>) {
+            return parsed['group'] as Map<String, dynamic>;
+          } else if (parsed['data'] is Map<String, dynamic>) {
+            return parsed['data'] as Map<String, dynamic>;
+          }
+          return parsed;
+        }
       }
+    } catch (e) {
+      print('❌ Error: $e');
     }
-  } catch (e) {
-    print('❌ Error: $e');
+    return null;
   }
-  return null;
-}
 }

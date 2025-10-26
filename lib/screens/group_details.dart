@@ -51,10 +51,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       
       if (groupData != null && mounted) {
         // 🔍 DEBUG: Print EXACT response structure
-        print('═══════════════════════════════════════');
+        print('╔════════════════════════════════════════╗');
         print('🔍 RAW GROUP DATA:');
         print(jsonEncode(groupData));
-        print('═══════════════════════════════════════');
+        print('╚════════════════════════════════════════╝');
         
         // Print members specifically
         final membersList = groupData['members'];
@@ -75,7 +75,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
             }
           }
         }
-        print('═══════════════════════════════════════');
+        print('╚════════════════════════════════════════╝');
         
         // Extract admin information
         final createdByField = groupData['createdBy'];
@@ -324,6 +324,138 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     );
   }
 
+  // ✅ NEW: Format date helper
+  String _formatDate(String dateStr) {
+    try {
+      final date = DateTime.parse(dateStr);
+      final now = DateTime.now();
+      final diff = now.difference(date);
+      
+      if (diff.inDays == 0) return 'Today';
+      if (diff.inDays == 1) return 'Yesterday';
+      if (diff.inDays < 7) return '${diff.inDays} days ago';
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (e) {
+      return dateStr;
+    }
+  }
+
+  // ✅ NEW: Build expense card
+  Widget _buildExpenseCard({
+    required Map<String, dynamic> expense,
+    required Color cardColor,
+    required Color textColor,
+    required Color primaryColor,
+    required bool isDark,
+  }) {
+    final totalAmount = (expense['totalAmount'] ?? 0).toDouble();
+    final description = expense['description']?.toString() ?? 'Expense';
+    final createdAt = expense['createdAt']?.toString() ?? '';
+    final assignments = expense['assignments'] as List? ?? [];
+
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withOpacity(0.1)
+              : Colors.grey.withOpacity(0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  description,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: textColor,
+                  ),
+                ),
+              ),
+              Text(
+                '₹${totalAmount.toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: primaryColor,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 8),
+          
+          // Display assignments
+          ...assignments.map((assignment) {
+            final fromName = assignment['from']?['name'] ?? 'Someone';
+            final toName = assignment['to']?['name'] ?? 'Someone';
+            final amount = (assignment['amount'] ?? 0).toDouble();
+            final fromEmail = assignment['from']?['email'] ?? '';
+            final toEmail = assignment['to']?['email'] ?? '';
+            
+            String displayText;
+            Color displayColor;
+            
+            if (fromEmail == _currentUserEmail) {
+              displayText = 'You owe $toName ₹${amount.toStringAsFixed(2)}';
+              displayColor = Colors.red;
+            } else if (toEmail == _currentUserEmail) {
+              displayText = '$fromName owes you ₹${amount.toStringAsFixed(2)}';
+              displayColor = Colors.green;
+            } else {
+              displayText = '$fromName owes $toName ₹${amount.toStringAsFixed(2)}';
+              displayColor = textColor.withOpacity(0.7);
+            }
+            
+            return Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    fromEmail == _currentUserEmail || toEmail == _currentUserEmail
+                        ? Icons.arrow_forward
+                        : Icons.people_outline,
+                    size: 16,
+                    color: displayColor,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      displayText,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: displayColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+          
+          if (createdAt.isNotEmpty) ...[
+            SizedBox(height: 8),
+            Text(
+              _formatDate(createdAt),
+              style: TextStyle(
+                fontSize: 11,
+                color: textColor.withOpacity(0.5),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -481,7 +613,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
                         SizedBox(height: 24),
 
-                        // Recent Activity Section
+                        // ✅ NEW: Recent Activity Section with Consumer
                         Text(
                           'Recent Activity',
                           style: TextStyle(
@@ -492,44 +624,64 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                         ),
                         SizedBox(height: 12),
 
-                        Container(
-                          width: double.infinity,
-                          padding: EdgeInsets.all(32),
-                          decoration: BoxDecoration(
-                            color: cardColor,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: isDark
-                                  ? Colors.white.withOpacity(0.1)
-                                  : Colors.grey.withOpacity(0.2),
-                            ),
-                          ),
-                          child: Column(
-                            children: [
-                              Icon(
-                                Icons.receipt_long,
-                                size: 48,
-                                color: isDark ? Colors.white24 : Colors.grey[400],
-                              ),
-                              SizedBox(height: 16),
-                              Text(
-                                'No expenses yet',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: textColor,
+                        Consumer<GroupService>(
+                          builder: (context, groupService, _) {
+                            final expenses = groupService.getGroupExpenses(widget.groupId);
+                            
+                            if (expenses.isEmpty) {
+                              return Container(
+                                width: double.infinity,
+                                padding: EdgeInsets.all(32),
+                                decoration: BoxDecoration(
+                                  color: cardColor,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: isDark
+                                        ? Colors.white.withOpacity(0.1)
+                                        : Colors.grey.withOpacity(0.2),
+                                  ),
                                 ),
-                              ),
-                              SizedBox(height: 8),
-                              Text(
-                                'Add a bill to get started',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: textColor.withOpacity(0.6),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.receipt_long,
+                                      size: 48,
+                                      color: isDark ? Colors.white24 : Colors.grey[400],
+                                    ),
+                                    SizedBox(height: 16),
+                                    Text(
+                                      'No expenses yet',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: textColor,
+                                      ),
+                                    ),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Add a bill to get started',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: textColor.withOpacity(0.6),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                            ],
-                          ),
+                              );
+                            }
+                            
+                            return Column(
+                              children: expenses.map((expense) {
+                                return _buildExpenseCard(
+                                  expense: expense,
+                                  cardColor: cardColor,
+                                  textColor: textColor,
+                                  primaryColor: primaryColor,
+                                  isDark: isDark,
+                                );
+                              }).toList(),
+                            );
+                          },
                         ),
 
                         SizedBox(height: 100),

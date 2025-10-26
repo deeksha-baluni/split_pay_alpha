@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'themes/app_theme.dart';
 import 'auth/login.dart';
 import 'auth/sign_up.dart';
+import 'auth/welcome_screen.dart'; // Add this import
 import 'home_panel.dart';
 import 'package:provider/provider.dart';
 import 'services/group_service.dart';
@@ -68,6 +69,7 @@ class _SplitPayAppState extends State<SplitPayApp> {
         themeMode: _themeMode,
         debugShowCheckedModeBanner: false,
         routes: {
+          '/welcome': (context) => const WelcomeScreen(),
           '/login': (context) => LoginScreen(onLoginSuccess: _onLoginOrSignUp),
           '/signup': (context) => SignUpScreen(onSignUpSuccess: _onLoginOrSignUp),
           '/home': (context) => HomePanel(
@@ -76,13 +78,14 @@ class _SplitPayAppState extends State<SplitPayApp> {
                 onLogout: _onLogout,
               ),
         },
+        // Changed: Show Welcome screen first, then home if authenticated
         home: _isAuthenticated
             ? HomePanel(
                 toggleTheme: _toggleTheme,
                 themeMode: _themeMode,
                 onLogout: _onLogout,
               )
-            : LoginScreen(onLoginSuccess: _onLoginOrSignUp),
+            : const WelcomeScreen(),
         onGenerateRoute: (settings) {
           if (settings.name == '/signup') {
             return PageRouteBuilder(

@@ -2,9 +2,11 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart'; // ✅ ADD THIS
 import '../components/header.dart';
 import '../services/bill_service.dart';
 import '../services/auth_service.dart';
+import '../services/group_service.dart'; // ✅ ADD THIS
 
 class BillReviewPage extends StatefulWidget {
   final String expenseId;
@@ -41,7 +43,7 @@ class _BillReviewPageState extends State<BillReviewPage> {
     }
     
     // Debug: Print members data
-    print('🔍 BillReviewPage initialized with ${widget.members.length} members:');
+    print('📋 BillReviewPage initialized with ${widget.members.length} members:');
     for (var member in widget.members) {
       print('   - ${member['name']}: ID=${member['id']}, Email=${member['email']}');
     }
@@ -75,11 +77,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
             print('   ${i + 1}. $name: $quantity × ₹$price = ₹$itemTotal');
             
             // 🚨 DETECT: If itemTotal is way off, the parsing is wrong
-            // Kerala Parata was parsed as: quantity=16, price=20, total=320
-            // But LLM might have swapped them, making it: quantity=20, price=16, total=320
-            // We need to check if price * quantity seems wrong
-            
-            // If the item total seems suspiciously high compared to bill total
             if (itemTotal > (details['totalAmount'] * 0.8)) {
               print('   ⚠️ WARNING: ${name} total (₹$itemTotal) is >80% of bill total (₹${details['totalAmount']})');
               print('   This suggests quantity and unit price might be swapped!');
@@ -414,8 +411,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
       print('   ID: $payerId');
 
       // Create assignments for backend
-      // Backend expects: { from: userId, to: userId, amount: number }
-      // ✅ FIX: The payer should NOT owe themselves. Skip self-assignments!
       List<Map<String, dynamic>> assignments = [];
       
       print('\n📋 CREATING ASSIGNMENTS:');
@@ -431,22 +426,22 @@ class _BillReviewPageState extends State<BillReviewPage> {
         print('      Email: $memberEmail');
         print('      Owes: ₹${amount.toStringAsFixed(2)}');
         
-        // ✅ CRITICAL FIX: Skip if this person is the payer (they don't owe themselves)
+        // ✅ CRITICAL FIX: Skip if this person is the payer
         if (memberId == payerId) {
-          print('      ⏭️ Skipped (this is the payer - no self-assignment)');
+          print('      ⭐️ Skipped (this is the payer - no self-assignment)');
           continue;
         }
         
         if (amount > 0) {
           assignments.add({
-            'from': memberId,     // who owes
-            'to': payerId,        // who to pay (the payer)
+            'from': memberId,
+            'to': payerId,
             'amount': amount,
           });
           totalAssigned += amount;
           print('      ✅ Assignment created: $memberId → $payerId (₹${amount.toStringAsFixed(2)})');
         } else {
-          print('      ⭐ Skipped (amount is 0)');
+          print('      ⭕ Skipped (amount is 0)');
         }
       }
 
@@ -458,12 +453,6 @@ class _BillReviewPageState extends State<BillReviewPage> {
       print('   Total bill: ₹${_expenseDetails?['totalAmount']}');
       print('   Total assigned to others: ₹${totalAssigned.toStringAsFixed(2)}');
       print('   Number of assignments: ${assignments.length}');
-      
-      print('\n📦 FINAL ASSIGNMENTS JSON:');
-      print(jsonEncode({
-        'expenseId': widget.expenseId,
-        'assignments': assignments,
-      }));
 
       // Show loading dialog
       showDialog(
@@ -526,6 +515,51 @@ class _BillReviewPageState extends State<BillReviewPage> {
 
       if (settleResult['success'] == true) {
         print('✅ Assignments settled successfully');
+        
+        // ✅ NEW: Cache this expense locally in GroupService
+        try {
+          final groupService = Provider.of<GroupService>(context, listen: false);
+          
+          // Create expense summary with item names
+          String description = 'Recent Bill';
+          if (items.isNotEmpty) {
+            final itemNames = items.take(2).map((item) => item['name'] ?? 'Item').join(', ');
+            description = items.length > 2 
+                ? '$itemNames and ${items.length - 2} more items'
+                : itemNames;
+          }
+          
+          final expenseSummary = {
+            '_id': widget.expenseId,
+            'description': description,
+            'totalAmount': _expenseDetails?['totalAmount'] ?? 0.0,
+            'assignments': assignments.map((a) {
+              final fromMember = widget.members.firstWhere((m) => m['id'] == a['from']);
+              final toMember = widget.members.firstWhere((m) => m['id'] == a['to']);
+              return {
+                'from': {
+                  '_id': a['from'],
+                  'name': fromMember['name'],
+                  'email': fromMember['email'],
+                },
+                'to': {
+                  '_id': a['to'],
+                  'name': toMember['name'],
+                  'email': toMember['email'],
+                },
+                'amount': a['amount'],
+              };
+            }).toList(),
+            'items': items,
+            'createdAt': DateTime.now().toIso8601String(),
+          };
+          
+          groupService.addExpenseToGroup(widget.groupId, expenseSummary);
+          print('✅ Expense cached locally in GroupService');
+        } catch (e) {
+          print('⚠️ Error caching expense: $e');
+          // Non-critical error, continue
+        }
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

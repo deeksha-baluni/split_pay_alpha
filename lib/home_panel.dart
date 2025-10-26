@@ -4,6 +4,7 @@ import 'panels/profile.dart';
 import 'panels/group.dart';
 import 'panels/create_group.dart';
 import 'panels/balances.dart';
+import 'screens/add_bill.dart';
 import 'services/auth_service.dart';
 import 'services/group_service.dart';
 import 'services/invite_service.dart';
@@ -236,6 +237,205 @@ class _HomePanelState extends State<HomePanel> {
     svc.selectedIndex = 2;
   }
 
+  // NEW: Show group selection dialog and navigate to Add Bill page
+  void _showAddBillDialog() async {
+    final groupService = Provider.of<GroupService>(context, listen: false);
+    final groups = groupService.groups;
+
+    if (groups.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please create a group first'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // Show dialog to select group
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.receipt_long, color: Theme.of(context).primaryColor),
+              SizedBox(width: 12),
+              Text('Select Group'),
+            ],
+          ),
+          content: Container(
+            width: double.maxFinite,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: groups.length,
+              separatorBuilder: (context, index) => Divider(height: 1),
+              itemBuilder: (context, index) {
+                final group = groups[index];
+                return ListTile(
+                  leading: Icon(
+                    Icons.groups,
+                    color: Theme.of(context).primaryColor,
+                  ),
+                  title: Text(
+                    group.name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: Text('${group.members} member${group.members != 1 ? 's' : ''}'),
+                  trailing: Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: () async {
+                    // Save context references before async operations
+                    final navigator = Navigator.of(context);
+                    final scaffoldMessenger = ScaffoldMessenger.of(context);
+                    
+                    // Close selection dialog
+                    navigator.pop();
+
+                    // Show loading dialog
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (loadingCtx) => WillPopScope(
+                        onWillPop: () async => false,
+                        child: Center(
+                          child: Container(
+                            padding: EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).cardColor,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircularProgressIndicator(),
+                                SizedBox(height: 16),
+                                Text('Loading group details...'),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+
+                    try {
+                      // Fetch group details to get members with timeout
+                      final groupData = await groupService.fetchGroupDetails(group.id!)
+                          .timeout(
+                            Duration(seconds: 15),
+                            onTimeout: () {
+                              throw Exception('Request timed out. Please check your connection.');
+                            },
+                          );
+
+                      if (groupData == null) {
+                        throw Exception('Failed to load group details');
+                      }
+
+                      print('📦 Group data received: ${groupData.keys}');
+
+                      // Extract members
+                      List<Map<String, String>> members = [];
+                      final membersList = groupData['members'];
+                      
+                      print('👥 Members list type: ${membersList.runtimeType}');
+                      print('👥 Members list: $membersList');
+                      
+                      if (membersList is List && membersList.isNotEmpty) {
+                        for (final member in membersList) {
+                          if (member is Map) {
+                            final memberId = member['_id']?.toString() ?? member['id']?.toString() ?? '';
+                            final memberName = member['name']?.toString() ?? 'Member';
+                            final memberEmail = member['email']?.toString() ?? '';
+                            
+                            print('   Processing: $memberName (ID: $memberId)');
+                            
+                            if (memberId.isNotEmpty && memberId != 'null') {
+                              final avatarId = memberEmail.isNotEmpty 
+                                  ? (memberEmail.hashCode.abs() % 70) + 1
+                                  : (memberId.hashCode.abs() % 70) + 1;
+                              
+                              members.add({
+                                'id': memberId,
+                                'name': memberName,
+                                'email': memberEmail,
+                                'avatar': 'https://i.pravatar.cc/150?img=$avatarId',
+                              });
+                              
+                              print('   ✅ Added: $memberName');
+                            }
+                          }
+                        }
+                      }
+
+                      print('📋 Total members extracted: ${members.length}');
+
+                      if (members.isEmpty) {
+                        throw Exception('No valid members found in group. Please ensure the group has members.');
+                      }
+
+                      // Close loading dialog using saved navigator
+                      if (mounted && navigator.canPop()) {
+                        navigator.pop();
+                      }
+
+                      // Navigate to Add Bill page using saved navigator
+                      if (mounted) {
+                        navigator.push(
+                          MaterialPageRoute(
+                            builder: (context) => AddBillPage(
+                              groupId: group.id!,
+                              members: members,
+                            ),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      print('❌ Error in _showAddBillDialog: $e');
+                      
+                      // Close loading dialog using saved navigator
+                      if (mounted && navigator.canPop()) {
+                        try {
+                          navigator.pop();
+                        } catch (_) {}
+                      }
+                      
+                      if (mounted) {
+                        scaffoldMessenger.showSnackBar(
+                          SnackBar(
+                            content: Text('Error: ${e.toString()}'),
+                            backgroundColor: Colors.red,
+                            duration: Duration(seconds: 4),
+                            action: SnackBarAction(
+                              label: 'OK',
+                              textColor: Colors.white,
+                              onPressed: () {},
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildHome(BuildContext context) {
     final isDark = widget.themeMode == ThemeMode.dark;
     final colorPrimary = isDark ? Color(0xFF2266B6) : Color(0xFF3A7FD5);
@@ -249,7 +449,6 @@ class _HomePanelState extends State<HomePanel> {
     final horizontalPadding = (size.width * 0.045).clamp(12.0, 24.0);
     final cardRadius = (size.width * 0.035).clamp(12.0, 18.0);
     final sectionTitleSize = (size.width * 0.045).clamp(16.0, 20.0) * textScale;
-    final cardPadding = (size.width * 0.04).clamp(14.0, 22.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -716,24 +915,57 @@ class _HomePanelState extends State<HomePanel> {
                               fontSize: (headerHeight * 0.06).clamp(14.0, 18.0),
                             ),
                           ),
-                          SizedBox(height: (headerHeight * 0.03).clamp(6.0, 10.0)),
-                          Center(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: colorPrimary,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular((headerHeight * 0.05).clamp(10.0, 16.0)),
+                          SizedBox(height: (headerHeight * 0.04).clamp(8.0, 14.0)),
+                          
+                          // NEW: Two buttons side by side
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: colorPrimary,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular((headerHeight * 0.05).clamp(10.0, 16.0)),
+                                    ),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: (headerHeight * 0.06).clamp(8.0, 16.0), 
+                                      vertical: (headerHeight * 0.05).clamp(8.0, 12.0)
+                                    ),
+                                    elevation: 0,
+                                  ),
+                                  onPressed: _navigateToCreateGroup,
+                                  icon: Icon(Icons.group_add, size: 18),
+                                  label: Text(
+                                    "Create Group",
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                  ),
                                 ),
-                                padding: EdgeInsets.symmetric(horizontal: (headerHeight * 0.12).clamp(16.0, 26.0), vertical: (headerHeight * 0.05).clamp(8.0, 12.0)),
-                                elevation: 0,
                               ),
-                              onPressed: _navigateToCreateGroup,
-                              child: const Text(
-                                "Create Group",
-                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular((headerHeight * 0.05).clamp(10.0, 16.0)),
+                                    ),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: (headerHeight * 0.06).clamp(8.0, 16.0), 
+                                      vertical: (headerHeight * 0.05).clamp(8.0, 12.0)
+                                    ),
+                                    elevation: 0,
+                                  ),
+                                  onPressed: _showAddBillDialog,
+                                  icon: Icon(Icons.receipt_long, size: 18),
+                                  label: Text(
+                                    "Add Bill",
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
                         ],
                       ),
@@ -805,23 +1037,166 @@ class _HomePanelState extends State<HomePanel> {
         ),
         bottomNavigationBar: Consumer<GroupService>(
           builder: (context, svc, _) {
-            return BottomNavigationBar(
-              items: _navItems,
-              currentIndex: svc.selectedIndex,
-              selectedItemColor: colorPrimary,
-              unselectedItemColor: isDark ? Colors.white38 : Colors.grey,
-              backgroundColor: isDark ? Color(0xFF19202E) : Colors.white,
-              type: BottomNavigationBarType.fixed,
-              onTap: (index) {
-                svc.selectedIndex = index;
-                if (index == 0) {
-                  _loadPendingInvites();
-                  _loadNotifications();
-                }
-              },
+            return Container(
+              margin: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: isDark ? Color(0xFF1E1E2E) : Colors.white,
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(isDark ? 0.4 : 0.15),
+                    blurRadius: 25,
+                    offset: Offset(0, 10),
+                    spreadRadius: 0,
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(30),
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildNavItem(
+                          icon: Icons.home_rounded,
+                          label: 'Home',
+                          index: 0,
+                          currentIndex: svc.selectedIndex,
+                          colorPrimary: colorPrimary,
+                          isDark: isDark,
+                          onTap: () {
+                            svc.selectedIndex = 0;
+                            _loadPendingInvites();
+                            _loadNotifications();
+                          },
+                        ),
+                        _buildNavItem(
+                          icon: Icons.groups_rounded,
+                          label: 'Groups',
+                          index: 1,
+                          currentIndex: svc.selectedIndex,
+                          colorPrimary: colorPrimary,
+                          isDark: isDark,
+                          onTap: () => svc.selectedIndex = 1,
+                        ),
+                        _buildNavItem(
+                          icon: Icons.add_circle,
+                          label: '',
+                          index: 2,
+                          currentIndex: svc.selectedIndex,
+                          colorPrimary: colorPrimary,
+                          isDark: isDark,
+                          isCenter: true,
+                          onTap: () => svc.selectedIndex = 2,
+                        ),
+                        _buildNavItem(
+                          icon: Icons.account_balance_wallet_rounded,
+                          label: 'Balances',
+                          index: 3,
+                          currentIndex: svc.selectedIndex,
+                          colorPrimary: colorPrimary,
+                          isDark: isDark,
+                          onTap: () => svc.selectedIndex = 3,
+                        ),
+                        _buildNavItem(
+                          icon: Icons.person_rounded,
+                          label: 'Profile',
+                          index: 4,
+                          currentIndex: svc.selectedIndex,
+                          colorPrimary: colorPrimary,
+                          isDark: isDark,
+                          onTap: () => svc.selectedIndex = 4,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             );
           },
         ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem({
+    required IconData icon,
+    required String label,
+    required int index,
+    required int currentIndex,
+    required Color colorPrimary,
+    required bool isDark,
+    required VoidCallback onTap,
+    bool isCenter = false,
+  }) {
+    final isSelected = currentIndex == index;
+    
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        padding: EdgeInsets.symmetric(
+          horizontal: isCenter ? 0 : (isSelected ? 16 : 12),
+          vertical: isCenter ? 0 : 8,
+        ),
+        decoration: BoxDecoration(
+          color: isSelected && !isCenter
+              ? colorPrimary.withOpacity(0.15)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(isCenter ? 50 : 16),
+        ),
+        child: isCenter
+            ? Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      colorPrimary,
+                      colorPrimary.withOpacity(0.8),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: colorPrimary.withOpacity(0.4),
+                      blurRadius: 15,
+                      offset: Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  icon,
+                  color: Colors.white,
+                  size: 32,
+                ),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon,
+                    color: isSelected ? colorPrimary : (isDark ? Colors.white54 : Colors.grey),
+                    size: 24,
+                  ),
+                  if (isSelected && label.isNotEmpty) ...[
+                    SizedBox(width: 8),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: colorPrimary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
       ),
     );
   }
